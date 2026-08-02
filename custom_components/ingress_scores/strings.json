@@ -1,0 +1,102 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ingress account cookie",
+        "description": "Log in to https://intel.ingress.com in your browser, open the developer tools → Network tab, click any request to intel.ingress.com, and copy the full value of the `Cookie` request header. It must contain `csrftoken=`.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "region": {
+        "title": "Add a region",
+        "description": "Enter a coordinate inside the region you want to monitor, as decimal `lat, lng` (e.g. `51.39011, 8.583748`). Tip: pan the intel map to your area and copy the `ll=` value from the URL. Optionally give the region a custom name.",
+        "data": {
+          "coordinates": "Coordinates (lat, lng)",
+          "name": "Custom name (optional)"
+        }
+      },
+      "confirm": {
+        "title": "Confirm region",
+        "description": "This coordinate resolves to region **{region_name}**. Submit to finish setup."
+      },
+      "reauth_confirm": {
+        "title": "Update cookie",
+        "description": "Your Ingress cookie has expired or become invalid. Paste a fresh `Cookie` header from a logged-in intel.ingress.com request.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      }
+    },
+    "error": {
+      "invalid_cookie": "The cookie does not contain a csrftoken value.",
+      "invalid_auth": "The cookie is invalid or expired — log in again and copy a fresh one.",
+      "invalid_coordinates": "Could not parse the coordinates. Use decimal `lat, lng`.",
+      "cannot_connect": "Could not reach intel.ingress.com.",
+      "region_exists": "That region is already being monitored."
+    },
+    "abort": {
+      "reauth_successful": "Cookie updated successfully."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ingress Scores options",
+        "menu_options": {
+          "add_region": "Add a region",
+          "remove_region": "Remove regions",
+          "settings": "Poll interval"
+        }
+      },
+      "add_region": {
+        "title": "Add a region",
+        "description": "Enter a coordinate inside the region as decimal `lat, lng`.",
+        "data": {
+          "coordinates": "Coordinates (lat, lng)",
+          "name": "Custom name (optional)"
+        }
+      },
+      "add_confirm": {
+        "title": "Confirm region",
+        "description": "This coordinate resolves to region **{region_name}**. Submit to add it."
+      },
+      "remove_region": {
+        "title": "Remove regions",
+        "data": {
+          "regions": "Regions to remove"
+        }
+      },
+      "settings": {
+        "title": "Poll interval",
+        "data": {
+          "scan_interval_minutes": "Update interval (minutes)"
+        }
+      }
+    },
+    "abort": {
+      "no_regions": "There are no regions to remove."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "green_score": {
+        "name": "Green score"
+      },
+      "blue_score": {
+        "name": "Blue score"
+      },
+      "leader": {
+        "name": "Leading team",
+        "state": {
+          "green": "Green",
+          "blue": "Blue",
+          "tie": "Tie"
+        }
+      },
+      "cycle_end": {
+        "name": "Cycle end"
+      }
+    }
+  }
+}

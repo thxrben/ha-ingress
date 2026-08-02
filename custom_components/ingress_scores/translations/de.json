@@ -1,0 +1,102 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ingress-Konto-Cookie",
+        "description": "Melde dich im Browser bei https://intel.ingress.com an, öffne die Entwicklertools → Reiter „Netzwerk“, klicke auf eine Anfrage an intel.ingress.com und kopiere den vollständigen Wert des `Cookie`-Anfrageheaders. Er muss `csrftoken=` enthalten.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      },
+      "region": {
+        "title": "Region hinzufügen",
+        "description": "Gib eine Koordinate innerhalb der zu überwachenden Region als Dezimalwert `lat, lng` ein (z. B. `51.39011, 8.583748`). Tipp: Zentriere die Intel-Karte auf dein Gebiet und kopiere den `ll=`-Wert aus der URL. Optional kannst du der Region einen eigenen Namen geben.",
+        "data": {
+          "coordinates": "Koordinaten (lat, lng)",
+          "name": "Eigener Name (optional)"
+        }
+      },
+      "confirm": {
+        "title": "Region bestätigen",
+        "description": "Diese Koordinate gehört zur Region **{region_name}**. Zum Abschließen bestätigen."
+      },
+      "reauth_confirm": {
+        "title": "Cookie aktualisieren",
+        "description": "Dein Ingress-Cookie ist abgelaufen oder ungültig. Füge einen neuen `Cookie`-Header aus einer angemeldeten intel.ingress.com-Anfrage ein.",
+        "data": {
+          "cookie": "Cookie"
+        }
+      }
+    },
+    "error": {
+      "invalid_cookie": "Das Cookie enthält keinen csrftoken-Wert.",
+      "invalid_auth": "Das Cookie ist ungültig oder abgelaufen – melde dich erneut an und kopiere ein neues.",
+      "invalid_coordinates": "Die Koordinaten konnten nicht gelesen werden. Verwende dezimal `lat, lng`.",
+      "cannot_connect": "intel.ingress.com konnte nicht erreicht werden.",
+      "region_exists": "Diese Region wird bereits überwacht."
+    },
+    "abort": {
+      "reauth_successful": "Cookie erfolgreich aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ingress-Scores-Optionen",
+        "menu_options": {
+          "add_region": "Region hinzufügen",
+          "remove_region": "Regionen entfernen",
+          "settings": "Abrufintervall"
+        }
+      },
+      "add_region": {
+        "title": "Region hinzufügen",
+        "description": "Gib eine Koordinate innerhalb der Region als Dezimalwert `lat, lng` ein.",
+        "data": {
+          "coordinates": "Koordinaten (lat, lng)",
+          "name": "Eigener Name (optional)"
+        }
+      },
+      "add_confirm": {
+        "title": "Region bestätigen",
+        "description": "Diese Koordinate gehört zur Region **{region_name}**. Zum Hinzufügen bestätigen."
+      },
+      "remove_region": {
+        "title": "Regionen entfernen",
+        "data": {
+          "regions": "Zu entfernende Regionen"
+        }
+      },
+      "settings": {
+        "title": "Abrufintervall",
+        "data": {
+          "scan_interval_minutes": "Aktualisierungsintervall (Minuten)"
+        }
+      }
+    },
+    "abort": {
+      "no_regions": "Es gibt keine Regionen zum Entfernen."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "green_score": {
+        "name": "Punktzahl Grün"
+      },
+      "blue_score": {
+        "name": "Punktzahl Blau"
+      },
+      "leader": {
+        "name": "Führendes Team",
+        "state": {
+          "green": "Grün",
+          "blue": "Blau",
+          "tie": "Gleichstand"
+        }
+      },
+      "cycle_end": {
+        "name": "Zyklusende"
+      }
+    }
+  }
+}

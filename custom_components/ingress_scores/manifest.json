@@ -1,0 +1,12 @@
+{
+  "domain": "ingress_scores",
+  "name": "Ingress Scores",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/thorben/ha-ingress-game",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/thorben/ha-ingress-game/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
