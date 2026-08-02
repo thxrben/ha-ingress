@@ -80,6 +80,48 @@ SENSOR_TYPES: tuple[IngressSensorDescription, ...] = (
 )
 
 
+def _comm_latest_attrs(d: RegionData) -> dict | None:
+    ev = d.comm_latest
+    if not ev:
+        return None
+    return {
+        key: ev.get(key)
+        for key in (
+            "action",
+            "agent",
+            "team",
+            "portal",
+            "address",
+            "latitude",
+            "longitude",
+            "timestamp",
+            "guid",
+        )
+    }
+
+
+# COMM sensors are only added when local COMM monitoring is enabled.
+COMM_SENSOR_TYPES: tuple[IngressSensorDescription, ...] = (
+    IngressSensorDescription(
+        key="comm_latest",
+        translation_key="comm_latest",
+        icon="mdi:message-alert",
+        # HA states are capped at 255 chars; COMM texts are short but truncate to be safe.
+        value_fn=lambda d: d.comm_latest["text"][:255] if d.comm_latest else None,
+        attributes_fn=_comm_latest_attrs,
+    ),
+    IngressSensorDescription(
+        key="comm_count",
+        translation_key="comm_count",
+        icon="mdi:counter",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement="events",
+        value_fn=lambda d: d.comm_total,
+        attributes_fn=lambda d: {"recent": d.comm_recent},
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: IngressConfigEntry,
@@ -87,10 +129,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up sensors for each configured region."""
     coordinator = entry.runtime_data
+    descriptions = SENSOR_TYPES
+    if coordinator.comm_enabled:
+        descriptions = (*SENSOR_TYPES, *COMM_SENSOR_TYPES)
     entities = [
         IngressSensor(coordinator, region, description)
         for region in coordinator.regions
-        for description in SENSOR_TYPES
+        for description in descriptions
     ]
     async_add_entities(entities)
 

@@ -1,8 +1,8 @@
 # Ingress Scores — Home Assistant integration
 
-Monitor the **regional scores** (green / Enlightened vs. blue / Resistance) from
-[intel.ingress.com](https://intel.ingress.com) for one or more regions, as Home
-Assistant sensors.
+Monitor the **regional scores** (green / Enlightened vs. blue / Resistance) and
+**local COMM portal activity** from [intel.ingress.com](https://intel.ingress.com)
+for one or more regions, as Home Assistant sensors and events.
 
 > ⚠️ This uses **unofficial, reverse-engineered** endpoints. Automated access to
 > the Intel Map may violate Niantic's Terms of Service and has led to account
@@ -19,6 +19,51 @@ Per monitored region, a **device** with these sensors:
 | Blue score | Resistance score (`gameScore[1]`), in MU |
 | Leading team | `green` / `blue` / `tie`; attributes include the score margin and top agents |
 | Cycle end | Timestamp when the current base cycle ends |
+| Latest COMM event | Text of the most recent local portal change; attributes hold the action, agent, team, portal name/address/coordinates, timestamp and guid |
+| COMM events | Running count of portal changes seen since startup; `recent` attribute lists the last 25 (newest first) |
+
+The last two appear only when **COMM monitoring** is enabled (it is by default).
+
+## Local COMM portal changes
+
+Within a configurable radius (default **10 km**) around each region's coordinate,
+the integration watches the COMM feed (`getPlexts`) for **portal changes** —
+**captures, neutralisations, links created/destroyed, and Control Fields
+created/destroyed**. Player chat, resonator deploys and mod deploys are ignored.
+
+For each new event it fires a Home Assistant **event** on the bus, type
+**`ingress_scores_comm`**, so you can trigger automations/notifications. The event
+data looks like:
+
+```yaml
+region_id: "51390110_8583748"
+region: "NR02-GOLF-13"
+action: capture          # capture | neutralize | link | link_destroy | field | field_destroy
+text: "AgentName captured PortalName"
+agent: "AgentName"
+team: ENLIGHTENED        # ENLIGHTENED | RESISTANCE
+portal: "PortalName"
+address: "Some street, City"
+latitude: 51.391
+longitude: 8.584
+portals: [ ... ]         # all portals referenced (e.g. both ends of a link)
+timestamp: "2026-08-02T12:34:56+00:00"
+guid: "..."
+```
+
+Example automation trigger:
+
+```yaml
+trigger:
+  - platform: event
+    event_type: ingress_scores_comm
+    event_data:
+      action: capture
+```
+
+> On startup the integration primes the feed silently — the first poll seeds the
+> "Latest COMM event" sensor but does **not** fire bus events, so you don't get a
+> burst of stale notifications after a restart.
 
 ## Why a coordinate and not a region name?
 
@@ -48,7 +93,8 @@ folder and restart.
 5. Confirm the resolved region name.
 
 Add or remove more regions later, or change the poll interval (default 15 min,
-min 5 min), via the integration's **Configure** (options) dialog.
+min 5 min) and COMM settings (enable/disable, radius 1–50 km), via the
+integration's **Configure** (options) dialog.
 
 ## Cookie expiry / reauth
 
@@ -63,4 +109,6 @@ periodic re-paste is unavoidable.
   server-side in Python, so it doesn't apply.
 - The `v` API-version token is scraped from the intel page automatically and
   refreshed when it goes stale, so you never enter it manually.
-- Only scores are implemented for now. Portal data and more are planned.
+- Scores and local COMM portal-change monitoring are implemented. Subscribing to
+  specific portals (status + a positionable image entity) is planned — see
+  `docs/portal-tracking-idea.md`.

@@ -68,9 +68,11 @@
         }
       },
       "settings": {
-        "title": "Abrufintervall",
+        "title": "Abrufintervall & COMM",
         "data": {
-          "scan_interval_minutes": "Aktualisierungsintervall (Minuten)"
+          "scan_interval_minutes": "Aktualisierungsintervall (Minuten)",
+          "comm_enabled": "Lokale COMM-Portalereignisse überwachen",
+          "comm_radius_km": "COMM-Radius um jede Region (km)"
         }
       }
     },
@@ -96,6 +98,12 @@
       },
       "cycle_end": {
         "name": "Zyklusende"
+      },
+      "comm_latest": {
+        "name": "Letztes COMM-Ereignis"
+      },
+      "comm_count": {
+        "name": "COMM-Ereignisse"
       }
     }
   }

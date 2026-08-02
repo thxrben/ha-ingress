@@ -23,12 +23,18 @@ from .api import (
     parse_coordinates,
 )
 from .const import (
+    CONF_COMM_ENABLED,
+    CONF_COMM_RADIUS_KM,
     CONF_COOKIE,
     CONF_COORDINATES,
     CONF_REGIONS,
     CONF_SCAN_INTERVAL_MINUTES,
+    DEFAULT_COMM_ENABLED,
+    DEFAULT_COMM_RADIUS_KM,
     DEFAULT_SCAN_INTERVAL_MINUTES,
     DOMAIN,
+    MAX_COMM_RADIUS_KM,
+    MIN_COMM_RADIUS_KM,
     MIN_SCAN_INTERVAL_MINUTES,
     REGION_ID,
     REGION_LAT_E6,
@@ -281,15 +287,29 @@ class IngressOptionsFlow(OptionsFlow):
             options[CONF_SCAN_INTERVAL_MINUTES] = user_input[
                 CONF_SCAN_INTERVAL_MINUTES
             ]
+            options[CONF_COMM_ENABLED] = user_input[CONF_COMM_ENABLED]
+            options[CONF_COMM_RADIUS_KM] = user_input[CONF_COMM_RADIUS_KM]
             return self.async_create_entry(title="", data=options)
-        current = self.config_entry.options.get(
-            CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES
-        )
+        opts = self.config_entry.options
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_SCAN_INTERVAL_MINUTES, default=current
-                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL_MINUTES))
+                    CONF_SCAN_INTERVAL_MINUTES,
+                    default=opts.get(
+                        CONF_SCAN_INTERVAL_MINUTES, DEFAULT_SCAN_INTERVAL_MINUTES
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL_MINUTES)),
+                vol.Required(
+                    CONF_COMM_ENABLED,
+                    default=opts.get(CONF_COMM_ENABLED, DEFAULT_COMM_ENABLED),
+                ): bool,
+                vol.Required(
+                    CONF_COMM_RADIUS_KM,
+                    default=opts.get(CONF_COMM_RADIUS_KM, DEFAULT_COMM_RADIUS_KM),
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_COMM_RADIUS_KM, max=MAX_COMM_RADIUS_KM),
+                ),
             }
         )
         return self.async_show_form(step_id="settings", data_schema=schema)

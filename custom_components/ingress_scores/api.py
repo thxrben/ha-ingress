@@ -10,11 +10,12 @@ scraped at runtime rather than hardcoded.
 
 from __future__ import annotations
 
+import math
 import re
 
 from aiohttp import ClientError, ClientSession
 
-from .const import INTEL_URL, SCORE_URL
+from .const import INTEL_URL, PLEXTS_URL, SCORE_URL
 
 # The intel page ships a dashboard bundle whose filename hash equals the API
 # `v` token. Fall back to a bare 40-char hex token if the bundle name changes.
@@ -67,6 +68,121 @@ def parse_coordinates(value: str) -> tuple[int, int]:
     if abs(lat_e6) > 90_000_000 or abs(lng_e6) > 180_000_000:
         raise ValueError("Coordinates out of range")
     return lat_e6, lng_e6
+
+
+def bbox_from_center(
+    lat_e6: int, lng_e6: int, radius_km: float
+) -> tuple[int, int, int, int]:
+    """Return a (minLatE6, minLngE6, maxLatE6, maxLngE6) box around a point.
+
+    Uses a flat-earth approximation, which is fine for the small radii
+    (a few km) this integration deals with.
+    """
+    lat = lat_e6 / 1e6
+    lng = lng_e6 / 1e6
+    d_lat = radius_km / 111.0  # ~111 km per degree of latitude
+    # Degrees of longitude shrink with latitude; clamp near the poles.
+    cos_lat = max(math.cos(math.radians(lat)), 0.01)
+    d_lng = radius_km / (111.320 * cos_lat)
+    return (
+        int(round((lat - d_lat) * 1e6)),
+        int(round((lng - d_lng) * 1e6)),
+        int(round((lat + d_lat) * 1e6)),
+        int(round((lng + d_lng) * 1e6)),
+    )
+
+
+def _normalize_team(team: str | None) -> str | None:
+    """Map the API's team codes to the ENLIGHTENED/RESISTANCE names we use."""
+    if not team:
+        return None
+    upper = team.upper()
+    if upper in ("E", "ENLIGHTENED"):
+        return "ENLIGHTENED"
+    if upper in ("R", "RESISTANCE"):
+        return "RESISTANCE"
+    return team
+
+
+def _classify_plext(text: str) -> str | None:
+    """Map a COMM broadcast's text to a portal-change action, or None.
+
+    Only the actions the integration reports are recognised: portal captures,
+    neutralisations, and link/Control-Field creation and destruction. Resonator
+    and mod deploys, and player chat, return None (i.e. are ignored). Order
+    matters: "destroyed" checks come before the create checks so that
+    "destroyed the Link ..." is not misread as a link creation.
+    """
+    t = text.lower()
+    if "captured" in t:
+        return "capture"
+    if "neutralized" in t:
+        return "neutralize"
+    if "destroyed" in t and "link" in t:
+        return "link_destroy"
+    if "destroyed" in t and "control field" in t:
+        return "field_destroy"
+    if "linked" in t:
+        return "link"
+    if "created" in t and "control field" in t:
+        return "field"
+    return None
+
+
+def parse_plext(entry: list) -> dict | None:
+    """Parse one getPlexts entry into a normalized portal event, or None.
+
+    Chat (PLAYER_GENERATED) and non-portal broadcasts are dropped by returning
+    None. A returned dict has: guid, timestamp_ms, action, text, agent, team,
+    portals (list of {name, address, latitude, longitude, team}).
+    """
+    try:
+        guid, timestamp_ms, wrapper = entry[0], entry[1], entry[2]
+        plext = wrapper["plext"]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+    # PLAYER_GENERATED is agent chat; we only want game/system broadcasts.
+    if plext.get("plextType") == "PLAYER_GENERATED":
+        return None
+
+    text = plext.get("text", "") or ""
+    action = _classify_plext(text)
+    if action is None:
+        return None
+
+    agent: str | None = None
+    portals: list[dict] = []
+    for markup in plext.get("markup") or []:
+        if not isinstance(markup, list) or len(markup) != 2:
+            continue
+        mtype, mdata = markup[0], markup[1]
+        if not isinstance(mdata, dict):
+            continue
+        if mtype in ("SENDER", "AGENT") and agent is None:
+            agent = mdata.get("plain")
+        elif mtype == "PORTAL":
+            lat_e6 = mdata.get("latE6")
+            lng_e6 = mdata.get("lngE6")
+            portals.append(
+                {
+                    "name": mdata.get("name"),
+                    "address": mdata.get("address"),
+                    "latitude": lat_e6 / 1e6 if lat_e6 is not None else None,
+                    "longitude": lng_e6 / 1e6 if lng_e6 is not None else None,
+                    "team": _normalize_team(mdata.get("team")),
+                }
+            )
+
+    return {
+        "guid": guid,
+        "timestamp_ms": int(timestamp_ms),
+        "action": action,
+        "text": text,
+        "agent": agent,
+        "team": _normalize_team(plext.get("team")),
+        "portals": portals,
+    }
 
 
 class IngressClient:
@@ -146,3 +262,50 @@ class IngressClient:
             "score_history": result.get("scoreHistory", []),
             "vertices": result.get("regionVertices", []),
         }
+
+    async def async_get_plexts(
+        self,
+        min_lat_e6: int,
+        min_lng_e6: int,
+        max_lat_e6: int,
+        max_lng_e6: int,
+        version: str,
+        *,
+        tab: str = "all",
+        min_timestamp_ms: int = -1,
+        max_timestamp_ms: int = -1,
+    ) -> list:
+        """POST getPlexts for the COMM feed within a bounding box.
+
+        Returns the raw result list of `[guid, timestampMs, {plext: {...}}]`
+        entries (newest last), or an empty list. `tab="all"` includes the
+        system broadcasts (captures/links/fields) that portal-change events
+        are carried in.
+        """
+        body = {
+            "minLatE6": min_lat_e6,
+            "minLngE6": min_lng_e6,
+            "maxLatE6": max_lat_e6,
+            "maxLngE6": max_lng_e6,
+            "minTimestampMs": min_timestamp_ms,
+            "maxTimestampMs": max_timestamp_ms,
+            "tab": tab,
+            "v": version,
+        }
+        try:
+            async with self._session.post(
+                PLEXTS_URL, headers=self._headers, json=body
+            ) as resp:
+                if resp.status in (401, 403):
+                    raise IngressAuthError("Cookie invalid or expired")
+                if resp.status >= 400:
+                    raise IngressError(f"Unexpected HTTP status {resp.status}")
+                payload = await resp.json(content_type=None)
+        except ClientError as err:
+            raise IngressError(f"Error contacting intel.ingress.com: {err}") from err
+
+        if not isinstance(payload, dict) or "result" not in payload:
+            # As with scores, a stale `v` comes back without a result.
+            raise StaleVersion(f"No result in response: {payload}")
+
+        return payload["result"] or []

@@ -12,6 +12,8 @@ CONF_COOKIE = "cookie"
 # Config entry options
 CONF_REGIONS = "regions"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
+CONF_COMM_ENABLED = "comm_enabled"
+CONF_COMM_RADIUS_KM = "comm_radius_km"
 
 # Config/options flow input fields
 CONF_COORDINATES = "coordinates"
@@ -31,6 +33,17 @@ DEFAULT_SCAN_INTERVAL_MINUTES = 15
 MIN_SCAN_INTERVAL_MINUTES = 5
 DEFAULT_SCAN_INTERVAL = timedelta(minutes=DEFAULT_SCAN_INTERVAL_MINUTES)
 
+# COMM (local portal-change monitoring)
+DEFAULT_COMM_ENABLED = True
+DEFAULT_COMM_RADIUS_KM = 10
+MIN_COMM_RADIUS_KM = 1
+MAX_COMM_RADIUS_KM = 50
+# Newest portal events kept as a sensor attribute (per region).
+MAX_COMM_EVENTS = 25
+# Home Assistant event bus type fired for each new qualifying portal event.
+EVENT_COMM = f"{DOMAIN}_comm"
+
 # Endpoints
 INTEL_URL = "https://intel.ingress.com/intel"
 SCORE_URL = "https://intel.ingress.com/r/getRegionScoreDetails"
+PLEXTS_URL = "https://intel.ingress.com/r/getPlexts"

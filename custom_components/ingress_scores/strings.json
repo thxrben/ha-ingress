@@ -68,9 +68,11 @@
         }
       },
       "settings": {
-        "title": "Poll interval",
+        "title": "Poll interval & COMM",
         "data": {
-          "scan_interval_minutes": "Update interval (minutes)"
+          "scan_interval_minutes": "Update interval (minutes)",
+          "comm_enabled": "Monitor local COMM portal events",
+          "comm_radius_km": "COMM radius around each region (km)"
         }
       }
     },
@@ -96,6 +98,12 @@
       },
       "cycle_end": {
         "name": "Cycle end"
+      },
+      "comm_latest": {
+        "name": "Latest COMM event"
+      },
+      "comm_count": {
+        "name": "COMM events"
       }
     }
   }
