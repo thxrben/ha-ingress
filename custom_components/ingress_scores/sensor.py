@@ -20,13 +20,20 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
+    PORTAL_GUID,
+    PORTAL_NAME,
     REGION_ID,
     REGION_NAME,
     REGION_RESOLVED_NAME,
     TEAM_BLUE,
     TEAM_GREEN,
 )
-from .coordinator import IngressConfigEntry, IngressCoordinator, RegionData
+from .coordinator import (
+    IngressConfigEntry,
+    IngressCoordinator,
+    PortalData,
+    RegionData,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -122,20 +129,74 @@ COMM_SENSOR_TYPES: tuple[IngressSensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class IngressPortalSensorDescription(SensorEntityDescription):
+    """Describes a subscribed-portal sensor."""
+
+    value_fn: Callable[[PortalData], StateType]
+    attributes_fn: Callable[[PortalData], dict] | None = None
+
+
+PORTAL_SENSOR_TYPES: tuple[IngressPortalSensorDescription, ...] = (
+    IngressPortalSensorDescription(
+        key="portal_owner",
+        translation_key="portal_owner",
+        icon="mdi:account",
+        value_fn=lambda p: p.owner,
+        attributes_fn=lambda p: {
+            "team": p.team,
+            "name": p.name,
+            "latitude": p.latitude,
+            "longitude": p.longitude,
+            "image": p.image,
+            "mods": p.mods,
+            "resonators": p.resonators,
+        },
+    ),
+    IngressPortalSensorDescription(
+        key="portal_level",
+        translation_key="portal_level",
+        icon="mdi:numeric",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda p: p.level,
+    ),
+    IngressPortalSensorDescription(
+        key="portal_health",
+        translation_key="portal_health",
+        icon="mdi:heart-pulse",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="%",
+        value_fn=lambda p: p.health,
+    ),
+    IngressPortalSensorDescription(
+        key="portal_resonators",
+        translation_key="portal_resonators",
+        icon="mdi:hexagon-multiple",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda p: p.resonator_count,
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: IngressConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up sensors for each configured region."""
+    """Set up sensors for each configured region and subscribed portal."""
     coordinator = entry.runtime_data
     descriptions = SENSOR_TYPES
     if coordinator.comm_enabled:
         descriptions = (*SENSOR_TYPES, *COMM_SENSOR_TYPES)
-    entities = [
+    entities: list[SensorEntity] = [
         IngressSensor(coordinator, region, description)
         for region in coordinator.regions
         for description in descriptions
+    ]
+    entities += [
+        IngressPortalSensor(coordinator, portal, description)
+        for portal in coordinator.portal_configs
+        for description in PORTAL_SENSOR_TYPES
     ]
     async_add_entities(entities)
 
@@ -182,6 +243,53 @@ class IngressSensor(CoordinatorEntity[IngressCoordinator], SensorEntity):
     @property
     def extra_state_attributes(self) -> dict | None:
         data = self._region_data
+        if data is None or self.entity_description.attributes_fn is None:
+            return None
+        return self.entity_description.attributes_fn(data)
+
+
+class IngressPortalSensor(CoordinatorEntity[IngressCoordinator], SensorEntity):
+    """A single status sensor for one subscribed portal."""
+
+    _attr_has_entity_name = True
+    entity_description: IngressPortalSensorDescription
+
+    def __init__(
+        self,
+        coordinator: IngressCoordinator,
+        portal: dict,
+        description: IngressPortalSensorDescription,
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._guid = portal[PORTAL_GUID]
+        entry_id = coordinator.config_entry.entry_id
+        self._attr_unique_id = f"{entry_id}_portal_{self._guid}_{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry_id}_portal_{self._guid}")},
+            name=portal.get(PORTAL_NAME) or self._guid,
+            manufacturer="Niantic",
+            model="Ingress portal",
+        )
+
+    @property
+    def _portal_data(self) -> PortalData | None:
+        return self.coordinator.portal_data.get(self._guid)
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._portal_data is not None
+
+    @property
+    def native_value(self) -> StateType:
+        data = self._portal_data
+        if data is None:
+            return None
+        return self.entity_description.value_fn(data)
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        data = self._portal_data
         if data is None or self.entity_description.attributes_fn is None:
             return None
         return self.entity_description.attributes_fn(data)

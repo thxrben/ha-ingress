@@ -15,7 +15,13 @@ import re
 
 from aiohttp import ClientError, ClientSession
 
-from .const import INTEL_URL, PLEXTS_URL, SCORE_URL
+from .const import (
+    ENTITIES_URL,
+    INTEL_URL,
+    PLEXTS_URL,
+    PORTAL_DETAILS_URL,
+    SCORE_URL,
+)
 
 # The intel page ships a dashboard bundle whose filename hash equals the API
 # `v` token. Fall back to a bare 40-char hex token if the bundle name changes.
@@ -185,6 +191,108 @@ def parse_plext(entry: list) -> dict | None:
     }
 
 
+# --- Portal discovery / detail helpers -----------------------------------
+#
+# getEntities uses a slippy-style tile grid. The tile key is
+# "{zoom}_{x}_{y}_{level}_8_100" where tilesPerEdge and the minimum portal
+# level depend on the zoom. These tables mirror IITC; zoom 15 (32000 tiles per
+# edge, level 1) returns portals of every level, which is what we want for
+# discovery. Verified against a known key: 8.595E/51.39N -> 15_... matches.
+_ZOOM_TO_LEVEL = (8, 8, 8, 8, 7, 7, 7, 6, 6, 5, 4, 4, 3, 2, 2, 1)
+_ZOOM_TO_TILES_PER_EDGE = (
+    1, 1, 1, 40, 40, 80, 80, 320, 1000, 2000, 2000, 4000, 8000, 16000, 16000, 32000,
+)
+DISCOVERY_ZOOM = 15
+
+
+def _lng_to_tile(lng: float, tiles_per_edge: int) -> int:
+    return int((lng + 180.0) / 360.0 * tiles_per_edge)
+
+
+def _lat_to_tile(lat: float, tiles_per_edge: int) -> int:
+    lat_r = math.radians(lat)
+    merc = math.log(math.tan(lat_r) + 1.0 / math.cos(lat_r))
+    return int((1.0 - merc / math.pi) / 2.0 * tiles_per_edge)
+
+
+def tile_keys_around(
+    lat_e6: int, lng_e6: int, *, zoom: int = DISCOVERY_ZOOM, span: int = 1
+) -> list[str]:
+    """Return the getEntities tile keys covering a (2*span+1)^2 block."""
+    tiles_per_edge = _ZOOM_TO_TILES_PER_EDGE[zoom]
+    level = _ZOOM_TO_LEVEL[zoom]
+    lat = lat_e6 / 1e6
+    lng = lng_e6 / 1e6
+    x0 = _lng_to_tile(lng, tiles_per_edge)
+    y0 = _lat_to_tile(lat, tiles_per_edge)
+    return [
+        f"{zoom}_{x0 + dx}_{y0 + dy}_{level}_8_100"
+        for dx in range(-span, span + 1)
+        for dy in range(-span, span + 1)
+    ]
+
+
+def parse_portals_from_entities(result: dict) -> list[dict]:
+    """Extract portal summaries from a getEntities result.
+
+    Returns a list of {guid, name, team, latitude, longitude, level}. Links
+    ("e") and fields ("r") are ignored; TIMEOUT tiles are skipped.
+    """
+    portals: list[dict] = []
+    tile_map = (result or {}).get("map") or {}
+    for tile in tile_map.values():
+        if not isinstance(tile, dict):
+            continue
+        for entity in tile.get("gameEntities") or []:
+            try:
+                guid, _ts, data = entity[0], entity[1], entity[2]
+            except (IndexError, TypeError):
+                continue
+            if not (isinstance(data, list) and data and data[0] == "p"):
+                continue
+
+            def _at(idx: int):
+                return data[idx] if len(data) > idx else None
+
+            lat_e6 = _at(2)
+            lng_e6 = _at(3)
+            portals.append(
+                {
+                    "guid": guid,
+                    "team": _normalize_team(_at(1)),
+                    "latitude": lat_e6 / 1e6 if lat_e6 is not None else None,
+                    "longitude": lng_e6 / 1e6 if lng_e6 is not None else None,
+                    "level": _at(4),
+                    "name": _at(8),
+                }
+            )
+    return portals
+
+
+def parse_portal_details(guid: str, data: list) -> dict:
+    """Parse a getPortalDetails result array by its known indices."""
+
+    def _at(idx: int):
+        return data[idx] if isinstance(data, list) and len(data) > idx else None
+
+    lat_e6 = _at(2)
+    lng_e6 = _at(3)
+    return {
+        "guid": guid,
+        "team": _normalize_team(_at(1)),
+        "latitude": lat_e6 / 1e6 if lat_e6 is not None else None,
+        "longitude": lng_e6 / 1e6 if lng_e6 is not None else None,
+        "level": _at(4),
+        "health": _at(5),
+        "resonator_count": _at(6),
+        "image": _at(7),
+        "name": _at(8),
+        "mods": _at(14),
+        "resonators": _at(15),
+        "owner": _at(16),
+    }
+
+
 class IngressClient:
     """Minimal async client for region score details."""
 
@@ -309,3 +417,41 @@ class IngressClient:
             raise StaleVersion(f"No result in response: {payload}")
 
         return payload["result"] or []
+
+    async def async_get_entities(self, tile_keys: list[str], version: str) -> dict:
+        """POST getEntities for a set of tile keys. Returns the result dict."""
+        body = {"tileKeys": tile_keys, "v": version}
+        try:
+            async with self._session.post(
+                ENTITIES_URL, headers=self._headers, json=body
+            ) as resp:
+                if resp.status in (401, 403):
+                    raise IngressAuthError("Cookie invalid or expired")
+                if resp.status >= 400:
+                    raise IngressError(f"Unexpected HTTP status {resp.status}")
+                payload = await resp.json(content_type=None)
+        except ClientError as err:
+            raise IngressError(f"Error contacting intel.ingress.com: {err}") from err
+
+        if not isinstance(payload, dict) or "result" not in payload:
+            raise StaleVersion(f"No result in response: {payload}")
+        return payload["result"] or {}
+
+    async def async_get_portal_details(self, guid: str, version: str) -> dict:
+        """POST getPortalDetails for a single portal. Returns parsed detail."""
+        body = {"guid": guid, "v": version}
+        try:
+            async with self._session.post(
+                PORTAL_DETAILS_URL, headers=self._headers, json=body
+            ) as resp:
+                if resp.status in (401, 403):
+                    raise IngressAuthError("Cookie invalid or expired")
+                if resp.status >= 400:
+                    raise IngressError(f"Unexpected HTTP status {resp.status}")
+                payload = await resp.json(content_type=None)
+        except ClientError as err:
+            raise IngressError(f"Error contacting intel.ingress.com: {err}") from err
+
+        if not isinstance(payload, dict) or "result" not in payload:
+            raise StaleVersion(f"No result in response: {payload}")
+        return parse_portal_details(guid, payload["result"])

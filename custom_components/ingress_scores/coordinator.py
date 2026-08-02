@@ -25,6 +25,7 @@ from .const import (
     CONF_COMM_ENABLED,
     CONF_COMM_RADIUS_KM,
     CONF_COOKIE,
+    CONF_PORTALS,
     CONF_REGIONS,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_COMM_ENABLED,
@@ -33,6 +34,8 @@ from .const import (
     DOMAIN,
     EVENT_COMM,
     MAX_COMM_EVENTS,
+    PORTAL_GUID,
+    PORTAL_NAME,
     REGION_ID,
     REGION_LAT_E6,
     REGION_LNG_E6,
@@ -75,6 +78,24 @@ class RegionData:
 
 
 @dataclass
+class PortalData:
+    """Parsed detail for a single subscribed portal."""
+
+    guid: str
+    name: str | None
+    team: str | None
+    owner: str | None
+    level: int | None
+    health: int | None
+    resonator_count: int | None
+    latitude: float | None
+    longitude: float | None
+    image: str | None
+    mods: list | None
+    resonators: list | None
+
+
+@dataclass
 class _CommState:
     """Per-region accumulator for COMM events across polls."""
 
@@ -112,11 +133,18 @@ class IngressCoordinator(DataUpdateCoordinator[dict[str, RegionData]]):
         )
         self._version: str | None = None
         self._comm: dict[str, _CommState] = {}
+        # Populated alongside self.data each cycle, keyed by portal guid.
+        self.portal_data: dict[str, PortalData] = {}
 
     @property
     def regions(self) -> list[dict]:
         """Regions configured for this entry."""
         return self.config_entry.options.get(CONF_REGIONS, [])
+
+    @property
+    def portal_configs(self) -> list[dict]:
+        """Subscribed portals configured for this entry."""
+        return self.config_entry.options.get(CONF_PORTALS, [])
 
     async def _async_update_data(self) -> dict[str, RegionData]:
         try:
@@ -146,11 +174,55 @@ class IngressCoordinator(DataUpdateCoordinator[dict[str, RegionData]]):
                     data.comm_recent = recent
                     data.comm_total = total
                 result[region[REGION_ID]] = data
+
+            self.portal_data = await self._update_portals()
             return result
         except IngressAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except IngressError as err:
             raise UpdateFailed(str(err)) from err
+
+    async def _update_portals(self) -> dict[str, PortalData]:
+        """Fetch detail for every subscribed portal, keyed by guid."""
+        portals: dict[str, PortalData] = {}
+        for portal in self.portal_configs:
+            guid = portal[PORTAL_GUID]
+            try:
+                raw = await self._fetch_portal(guid)
+            except IngressAuthError:
+                raise  # let the coordinator trigger reauth
+            except IngressError as err:
+                # A single bad/unreachable portal shouldn't fail the whole
+                # update; keep last-known data for it if we have any.
+                _LOGGER.warning("Could not fetch portal %s: %s", guid, err)
+                if guid in self.portal_data:
+                    portals[guid] = self.portal_data[guid]
+                continue
+            portals[guid] = PortalData(
+                guid=guid,
+                # Prefer the live name; fall back to the stored one.
+                name=raw.get("name") or portal.get(PORTAL_NAME),
+                team=raw.get("team"),
+                owner=raw.get("owner"),
+                level=raw.get("level"),
+                health=raw.get("health"),
+                resonator_count=raw.get("resonator_count"),
+                latitude=raw.get("latitude"),
+                longitude=raw.get("longitude"),
+                image=raw.get("image"),
+                mods=raw.get("mods"),
+                resonators=raw.get("resonators"),
+            )
+        return portals
+
+    async def _fetch_portal(self, guid: str) -> dict:
+        """Fetch one portal's detail, refreshing the `v` token once if stale."""
+        try:
+            return await self.client.async_get_portal_details(guid, self._version)
+        except StaleVersion:
+            _LOGGER.debug("Portal detail rejected; refreshing API version token")
+            self._version = await self.client.async_get_version()
+            return await self.client.async_get_portal_details(guid, self._version)
 
     async def _fetch_region(self, region: dict) -> dict:
         """Fetch one region, refreshing the `v` token once if it is stale."""

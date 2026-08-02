@@ -46,7 +46,9 @@
         "menu_options": {
           "add_region": "Add a region",
           "remove_region": "Remove regions",
-          "settings": "Poll interval"
+          "add_portal": "Subscribe to a portal",
+          "remove_portal": "Unsubscribe portals",
+          "settings": "Poll interval & COMM"
         }
       },
       "add_region": {
@@ -67,6 +69,24 @@
           "regions": "Regions to remove"
         }
       },
+      "add_portal": {
+        "title": "Subscribe to a portal",
+        "description": "Enter a coordinate near the portal as decimal `lat, lng` (e.g. select the portal on the intel map and copy the `pll=` value from the URL) to pick the nearest one, or paste a portal GUID directly. If both are given, the GUID is used.",
+        "data": {
+          "coordinates": "Coordinates (lat, lng)",
+          "guid": "Portal GUID (optional)"
+        }
+      },
+      "add_portal_confirm": {
+        "title": "Confirm portal",
+        "description": "This resolves to portal **{portal_name}**. Submit to subscribe."
+      },
+      "remove_portal": {
+        "title": "Unsubscribe portals",
+        "data": {
+          "portals": "Portals to remove"
+        }
+      },
       "settings": {
         "title": "Poll interval & COMM",
         "data": {
@@ -76,8 +96,17 @@
         }
       }
     },
+    "error": {
+      "invalid_coordinates": "Could not parse the coordinates. Use decimal `lat, lng`.",
+      "invalid_auth": "The cookie is invalid or expired — reauthenticate first.",
+      "cannot_connect": "Could not reach intel.ingress.com.",
+      "region_exists": "That region is already being monitored.",
+      "portal_not_found": "No portal found — check the coordinate or GUID.",
+      "portal_exists": "That portal is already subscribed."
+    },
     "abort": {
-      "no_regions": "There are no regions to remove."
+      "no_regions": "There are no regions to remove.",
+      "no_portals": "There are no subscribed portals to remove."
     }
   },
   "entity": {
@@ -104,6 +133,18 @@
       },
       "comm_count": {
         "name": "COMM events"
+      },
+      "portal_owner": {
+        "name": "Owner"
+      },
+      "portal_level": {
+        "name": "Level"
+      },
+      "portal_health": {
+        "name": "Health"
+      },
+      "portal_resonators": {
+        "name": "Resonators"
       }
     }
   }

@@ -22,8 +22,11 @@ a small, explicit list of portals** and show their live status in Home Assistant
    `getPortalDetails` polling stays cheap and ToS-safe).
 3. **Per-portal entities** showing status (owner, team, level, resonator count,
    mods, health, last update).
-4. **Image entity** so the user can position each portal on a floor-plan / map
-   image in HA and show its status visually.
+
+Note (2026-08-02): the user does **not** want the integration to generate an
+image entity from the intel map. Just read the portal data and expose it as
+sensors (the portal's own image URL can be an attribute); the user handles any
+visualisation/positioning themselves in HA.
 
 ## API building blocks (already scoped from user's samples)
 

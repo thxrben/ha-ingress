@@ -65,6 +65,32 @@ trigger:
 > "Latest COMM event" sensor but does **not** fire bus events, so you don't get a
 > burst of stale notifications after a restart.
 
+## Subscribed portals
+
+You can subscribe to a small, explicit set of portals and read their live status.
+This is deliberately limited (a handful of portals) to keep polling cheap and
+ToS-safe — there is intentionally **no** "all portals I own" count.
+
+Add one via **Configure → Subscribe to a portal**, either by:
+
+- **Coordinate** — enter decimal `lat, lng` near the portal (select the portal on
+  the intel map and copy the `pll=` value from the URL); the nearest portal is
+  resolved via `getEntities` and you confirm its name, **or**
+- **Portal GUID** — paste it directly (e.g. from IITC).
+
+Each subscribed portal becomes its own **device** with these sensors, refreshed on
+the same poll interval:
+
+| Sensor | Description |
+| --- | --- |
+| Owner | Current owning agent's nick; attributes include team, name, coordinates, the portal image URL, mods and resonators |
+| Level | Portal level (1–8) |
+| Health | Portal energy, in % |
+| Resonators | Number of deployed resonators (0–8) |
+
+The portal's own image URL is exposed as an attribute on the Owner sensor — you can
+use it in whatever card/visualisation you like.
+
 ## Why a coordinate and not a region name?
 
 The API (`getRegionScoreDetails`) only accepts a **point** (`latE6`/`lngE6`) and
@@ -109,6 +135,5 @@ periodic re-paste is unavoidable.
   server-side in Python, so it doesn't apply.
 - The `v` API-version token is scraped from the intel page automatically and
   refreshed when it goes stale, so you never enter it manually.
-- Scores and local COMM portal-change monitoring are implemented. Subscribing to
-  specific portals (status + a positionable image entity) is planned — see
-  `docs/portal-tracking-idea.md`.
+- Scores, local COMM portal-change monitoring, and subscribed-portal status are
+  all implemented.

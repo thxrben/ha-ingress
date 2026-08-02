@@ -21,12 +21,16 @@ from .api import (
     IngressError,
     InvalidCookie,
     parse_coordinates,
+    parse_portals_from_entities,
+    tile_keys_around,
 )
 from .const import (
     CONF_COMM_ENABLED,
     CONF_COMM_RADIUS_KM,
     CONF_COOKIE,
     CONF_COORDINATES,
+    CONF_GUID,
+    CONF_PORTALS,
     CONF_REGIONS,
     CONF_SCAN_INTERVAL_MINUTES,
     DEFAULT_COMM_ENABLED,
@@ -36,6 +40,10 @@ from .const import (
     MAX_COMM_RADIUS_KM,
     MIN_COMM_RADIUS_KM,
     MIN_SCAN_INTERVAL_MINUTES,
+    PORTAL_GUID,
+    PORTAL_LAT_E6,
+    PORTAL_LNG_E6,
+    PORTAL_NAME,
     REGION_ID,
     REGION_LAT_E6,
     REGION_LNG_E6,
@@ -77,6 +85,54 @@ async def _resolve_region(hass, cookie: str, coordinates: str, name: str | None)
         REGION_RESOLVED_NAME: resolved,
         REGION_LAT_E6: lat_e6,
         REGION_LNG_E6: lng_e6,
+    }
+
+
+async def _resolve_portal(
+    hass, cookie: str, coordinates: str | None, guid: str | None
+) -> dict:
+    """Resolve a subscribed portal from a GUID or a nearby coordinate.
+
+    Returns a portal dict {guid, name, lat_e6, lng_e6}. Raises ValueError if
+    neither input is usable (e.g. no portal found near the coordinate).
+    """
+    client = IngressClient(async_get_clientsession(hass), cookie)
+    version = await client.async_get_version()
+
+    guid = (guid or "").strip()
+    if not guid:
+        if not (coordinates or "").strip():
+            raise ValueError("Provide a portal GUID or coordinates")
+        lat_e6, lng_e6 = parse_coordinates(coordinates)
+        result = await client.async_get_entities(
+            tile_keys_around(lat_e6, lng_e6), version
+        )
+        candidates = parse_portals_from_entities(result)
+        if not candidates:
+            raise ValueError("No portal found near that coordinate")
+        # Pick the nearest, scaling longitude by latitude so the metric is fair.
+        import math
+
+        cos_lat = max(math.cos(math.radians(lat_e6 / 1e6)), 0.01)
+
+        def _dist2(p: dict) -> float:
+            if p["latitude"] is None or p["longitude"] is None:
+                return float("inf")
+            dlat = p["latitude"] - lat_e6 / 1e6
+            dlng = (p["longitude"] - lng_e6 / 1e6) * cos_lat
+            return dlat * dlat + dlng * dlng
+
+        nearest = min(candidates, key=_dist2)
+        guid = nearest["guid"]
+
+    detail = await client.async_get_portal_details(guid, version)
+    lat = detail.get("latitude")
+    lng = detail.get("longitude")
+    return {
+        PORTAL_GUID: guid,
+        PORTAL_NAME: detail.get("name") or guid,
+        PORTAL_LAT_E6: int(round(lat * 1e6)) if lat is not None else None,
+        PORTAL_LNG_E6: int(round(lng * 1e6)) if lng is not None else None,
     }
 
 
@@ -184,14 +240,24 @@ class IngressOptionsFlow(OptionsFlow):
 
     def __init__(self) -> None:
         self._pending_region: dict | None = None
+        self._pending_portal: dict | None = None
 
     @property
     def _regions(self) -> list[dict]:
         return list(self.config_entry.options.get(CONF_REGIONS, []))
 
+    @property
+    def _portals(self) -> list[dict]:
+        return list(self.config_entry.options.get(CONF_PORTALS, []))
+
     def _save(self, regions: list[dict]) -> ConfigFlowResult:
         options = dict(self.config_entry.options)
         options[CONF_REGIONS] = regions
+        return self.async_create_entry(title="", data=options)
+
+    def _save_portals(self, portals: list[dict]) -> ConfigFlowResult:
+        options = dict(self.config_entry.options)
+        options[CONF_PORTALS] = portals
         return self.async_create_entry(title="", data=options)
 
     async def async_step_init(
@@ -199,7 +265,13 @@ class IngressOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_region", "remove_region", "settings"],
+            menu_options=[
+                "add_region",
+                "remove_region",
+                "add_portal",
+                "remove_portal",
+                "settings",
+            ],
         )
 
     async def async_step_add_region(
@@ -278,6 +350,92 @@ class IngressOptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(step_id="remove_region", data_schema=schema)
+
+    async def async_step_add_portal(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                portal = await _resolve_portal(
+                    self.hass,
+                    self.config_entry.data[CONF_COOKIE],
+                    user_input.get(CONF_COORDINATES),
+                    user_input.get(CONF_GUID),
+                )
+            except ValueError:
+                errors["base"] = "portal_not_found"
+            except IngressAuthError:
+                errors["base"] = "invalid_auth"
+            except IngressError:
+                errors["base"] = "cannot_connect"
+            else:
+                if any(
+                    p[PORTAL_GUID] == portal[PORTAL_GUID] for p in self._portals
+                ):
+                    errors["base"] = "portal_exists"
+                else:
+                    self._pending_portal = portal
+                    return await self.async_step_add_portal_confirm()
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_COORDINATES): str,
+                vol.Optional(CONF_GUID): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="add_portal", data_schema=schema, errors=errors
+        )
+
+    async def async_step_add_portal_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        assert self._pending_portal is not None
+        if user_input is not None:
+            return self._save_portals([*self._portals, self._pending_portal])
+        return self.async_show_form(
+            step_id="add_portal_confirm",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "portal_name": self._pending_portal[PORTAL_NAME]
+            },
+        )
+
+    async def async_step_remove_portal(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        portals = self._portals
+        if not portals:
+            return self.async_abort(reason="no_portals")
+        if user_input is not None:
+            keep = [
+                p for p in portals if p[PORTAL_GUID] not in user_input[CONF_PORTALS]
+            ]
+            return self._save_portals(keep)
+        from homeassistant.helpers.selector import (
+            SelectOptionDict,
+            SelectSelector,
+            SelectSelectorConfig,
+            SelectSelectorMode,
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_PORTALS): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            SelectOptionDict(
+                                value=p[PORTAL_GUID], label=p[PORTAL_NAME]
+                            )
+                            for p in portals
+                        ],
+                        multiple=True,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(step_id="remove_portal", data_schema=schema)
 
     async def async_step_settings(
         self, user_input: dict[str, Any] | None = None

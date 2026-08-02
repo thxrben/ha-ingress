@@ -11,12 +11,14 @@ CONF_COOKIE = "cookie"
 
 # Config entry options
 CONF_REGIONS = "regions"
+CONF_PORTALS = "portals"
 CONF_SCAN_INTERVAL_MINUTES = "scan_interval_minutes"
 CONF_COMM_ENABLED = "comm_enabled"
 CONF_COMM_RADIUS_KM = "comm_radius_km"
 
 # Config/options flow input fields
 CONF_COORDINATES = "coordinates"
+CONF_GUID = "guid"
 
 # Region dict keys (stored in options[CONF_REGIONS])
 REGION_ID = "id"
@@ -24,6 +26,12 @@ REGION_NAME = "name"  # user-friendly / resolved name used for the device
 REGION_RESOLVED_NAME = "region_name"  # regionName returned by the API
 REGION_LAT_E6 = "lat_e6"
 REGION_LNG_E6 = "lng_e6"
+
+# Portal dict keys (stored in options[CONF_PORTALS])
+PORTAL_GUID = "guid"
+PORTAL_NAME = "name"
+PORTAL_LAT_E6 = "lat_e6"
+PORTAL_LNG_E6 = "lng_e6"
 
 # Teams. Per the user's observed data, gameScore[0] is green, gameScore[1] is blue.
 TEAM_GREEN = "ENLIGHTENED"
@@ -47,3 +55,5 @@ EVENT_COMM = f"{DOMAIN}_comm"
 INTEL_URL = "https://intel.ingress.com/intel"
 SCORE_URL = "https://intel.ingress.com/r/getRegionScoreDetails"
 PLEXTS_URL = "https://intel.ingress.com/r/getPlexts"
+ENTITIES_URL = "https://intel.ingress.com/r/getEntities"
+PORTAL_DETAILS_URL = "https://intel.ingress.com/r/getPortalDetails"
