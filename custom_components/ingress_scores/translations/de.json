@@ -81,16 +81,16 @@
   "entity": {
     "sensor": {
       "green_score": {
-        "name": "Punktzahl Grün"
+        "name": "ENL (Grün) Punktzahl"
       },
       "blue_score": {
-        "name": "Punktzahl Blau"
+        "name": "RES (Blau) Punktzahl"
       },
       "leader": {
         "name": "Führendes Team",
         "state": {
-          "green": "Grün",
-          "blue": "Blau",
+          "green": "ENL (Grün)",
+          "blue": "RES (Blau)",
           "tie": "Gleichstand"
         }
       },
